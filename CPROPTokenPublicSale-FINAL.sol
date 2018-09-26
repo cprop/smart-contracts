@@ -353,7 +353,7 @@ contract CPROPTokenPublicSale is admined {
         maxGasPrice = 100 * 10**9; //100 GWEI _maxGasPrice;
 
         publicSaleStartTime = 1538265600; //1538265600 - Is equivalent to: 09/30/2018 @ 12:00am (UTC)
-        saleEndTime = 1541030399; //1541030399 - Is equivalent to: 10/31/2018 @ 11:59pm (UTC)
+        saleEndTime = 1542326399; //1542326399 - Is equivalent to: 11/15/2018 @ 11:59pm (UTC)
         hardCap = 20000000 * 10**attoUsdDecimals; // $20M * 10**18
         
         buyersCount = 0;
