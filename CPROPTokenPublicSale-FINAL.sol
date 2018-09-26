@@ -1,9 +1,298 @@
 pragma solidity ^0.4.21;
 
-import "./Helper.sol";
-import "./SafeMath.sol";
-import "./AttoUSDperETH.sol";
-import "./CPROPToken_Prod.sol";
+contract owned {
+    address public owner;
+
+    constructor() public {
+        owner = msg.sender;
+    }
+
+    modifier onlyOwner {
+        require(msg.sender == owner);
+        _;
+    }
+
+    function transferOwnership(address newOwner) onlyOwner public {
+        owner = newOwner;
+    }
+}
+
+contract admined is owned {
+    address public admin;
+
+    constructor() public {
+        admin = msg.sender;
+    }
+
+    modifier onlyAdmin {
+        require(msg.sender == admin || msg.sender == owner);
+        _;
+    }
+
+    function transferAdmin(address newAdmin) onlyOwner public {
+        admin = newAdmin;
+    }
+}
+
+
+/**
+ * @title SafeMath
+ * @dev Math operations with safety checks that throw on error
+ */
+library SafeMath {
+
+  /**
+  * @dev Multiplies two numbers, throws on overflow.
+  */
+  function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+    if (a == 0) {
+      return 0;
+    }
+    uint256 c = a * b;
+    assert(c / a == b);
+    return c;
+  }
+
+  /**
+  * @dev Integer division of two numbers, truncating the quotient.
+  */
+  function div(uint256 a, uint256 b) internal pure returns (uint256) {
+    // assert(b > 0); // Solidity automatically throws when dividing by 0
+    uint256 c = a / b;
+    // assert(a == b * c + a % b); // There is no case in which this doesn't hold
+    return c;
+  }
+
+  /**
+  * @dev Substracts two numbers, throws on overflow (i.e. if subtrahend is greater than minuend).
+  */
+  function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+    assert(b <= a);
+    return a - b;
+  }
+
+  /**
+  * @dev Adds two numbers, throws on overflow.
+  */
+  function add(uint256 a, uint256 b) internal pure returns (uint256) {
+    uint256 c = a + b;
+    assert(c >= a);
+    return c;
+  }
+}
+
+
+contract AttoUSDperETH is admined {
+    using SafeMath for uint256;
+    uint256 public attoUSDperETH;
+    bool public pause;
+    uint256 public attoUsdDecimals = 18;//** decimals
+    // This notifies admin about significant price change
+    event priceChange(uint256 prevPrice, uint256 nextPrice, uint percentChange);
+    
+    constructor() public {
+        pause = false;
+        attoUSDperETH = 25600 * 10**(attoUsdDecimals-2);//256.00 * 10^18 for 1 ETH
+    }
+    /**
+     * atto usd is usd * 10^18
+     * @param _p set atto usd per 1 eth
+     */
+    function set(uint _p) onlyAdmin public {
+        //expecting in USD * 10^18;
+        if(_p > 0) {
+            
+           if(_p > attoUSDperETH && (_p >= attoUSDperETH*2)){
+                emit priceChange(attoUSDperETH, _p, (((_p - attoUSDperETH)*100)/attoUSDperETH));
+                pause = true;
+            }else if(_p < attoUSDperETH && (_p*2 <= attoUSDperETH)){
+                emit priceChange(attoUSDperETH, _p, (((attoUSDperETH - _p)*100)/attoUSDperETH));
+                pause = true;
+            }
+            attoUSDperETH = _p;
+        }
+    }
+    
+    /**
+     * atto usd is usd * 10^18
+     * @return _attoUSDperTKN 1 eth price in atto usd 
+     */
+    function get() public view returns (uint _attoUSDperTKN) {
+        return attoUSDperETH;
+    }
+
+    function getPause() public view returns (bool _pause){
+        return pause;
+    }
+    
+    function setPause(bool _pause) onlyAdmin public {
+        pause = _pause;
+    }
+}
+
+interface tokenRecipient { function receiveApproval(address _from, uint256 _value, address _token, bytes _extraData) external; }
+
+contract TokenERC20 {
+    using SafeMath for uint256;
+    // Public variables of the token
+    string public name;
+    string public symbol;
+    uint256 public decimals = 18;
+    // 18 decimals is the strongly suggested default, avoid changing it
+    uint256 public totalSupply;
+
+    // This creates an array with all balances
+    mapping (address => uint256) public balanceOf;
+    mapping (address => mapping (address => uint256)) public allowance;
+
+    // This generates a public event on the blockchain that will notify clients
+    event Transfer(address indexed from, address indexed to, uint256 value);
+
+    // This notifies clients about the amount burnt
+    event Burn(address indexed from, uint256 value);
+
+    event Approval(address indexed tokenOwner, address indexed spender, uint tokens);
+
+    /**
+     * Constrctor function
+     *
+     * Initializes contract with initial supply tokens to the creator of the contract
+     */
+    constructor(
+        uint256 initialSupply,
+        string tokenName,
+        uint256 decimalsToken,
+        string tokenSymbol
+    ) public {
+        decimals = decimalsToken;
+        totalSupply = initialSupply * 10 ** uint256(decimals);  // Update total supply with the decimal amount
+        emit Transfer(0, msg.sender, totalSupply);
+        balanceOf[msg.sender] = totalSupply;                // Give the contract itself all initial tokens
+        name = tokenName;                                   // Set the name for display purposes
+        symbol = tokenSymbol;                               // Set the symbol for display purposes
+    }
+
+    /**
+     * Internal transfer, only can be called by this contract
+     */
+    function _transfer(address _from, address _to, uint _value) internal {
+        // Prevent transfer to 0x0 address. Use burn() instead
+        require(_to != 0x0);
+        // Subtract from the sender
+        balanceOf[_from] = balanceOf[_from].sub(_value);
+        // Add the same to the recipient
+        balanceOf[_to] = balanceOf[_to].add(_value);
+        emit Transfer(_from, _to, _value);
+    }
+
+    /**
+     * Transfer tokens
+     *
+     * Send `_value` tokens to `_to` from your account
+     *
+     * @param _to The address of the recipient
+     * @param _value the amount to send
+     */
+    function transfer(address _to, uint256 _value) public {
+        _transfer(msg.sender, _to, _value);
+    }
+
+    /**
+     * Transfer tokens from other address
+     *
+     * Send `_value` tokens to `_to` in behalf of `_from`
+     *
+     * @param _from The address of the sender
+     * @param _to The address of the recipient
+     * @param _value the amount to send
+     */
+    function transferFrom(address _from, address _to, uint256 _value) public returns (bool success) {
+        allowance[_from][msg.sender] = allowance[_from][msg.sender].sub(_value);
+        _transfer(_from, _to, _value);
+        return true;
+    }
+
+    /**
+     * Set allowance for other address
+     *
+     * Allows `_spender` to spend no more than `_value` tokens in your behalf
+     *
+     * @param _spender The address authorized to spend
+     * @param _value the max amount they can spend
+     */
+    function approve(address _spender, uint256 _value) public
+        returns (bool success) {
+        allowance[msg.sender][_spender] = _value;
+        emit Approval(msg.sender, _spender, _value);
+        return true;
+    }
+
+    /**
+     * Set allowance for other address and notify
+     *
+     * Allows `_spender` to spend no more than `_value` tokens in your behalf, and then ping the contract about it
+     *
+     * @param _spender The address authorized to spend
+     * @param _value the max amount they can spend
+     * @param _extraData some extra information to send to the approved contract
+     */
+    function approveAndCall(address _spender, uint256 _value, bytes _extraData) public
+        returns (bool success) {
+        tokenRecipient spender = tokenRecipient(_spender);
+        if (approve(_spender, _value)) {
+            spender.receiveApproval(msg.sender, _value, this, _extraData);
+            return true;
+        }
+    }
+
+    /**
+     * Destroy tokens
+     *
+     * Remove `_value` tokens from the system irreversibly
+     *
+     * @param _value the amount of money to burn
+     */
+    function burn(uint256 _value) public returns (bool success) {
+        _burn(msg.sender, _value);
+        return true;
+    }
+    
+    function _burn(address _who, uint256 _value) internal {
+        balanceOf[_who] = balanceOf[_who].sub(_value);  // Subtract from the sender
+        totalSupply = totalSupply.sub(_value);                      // Updates totalSupply
+        emit Burn(_who, _value);
+        emit Transfer(_who, address(0), _value);
+    }
+
+    /**
+     * Destroy tokens from other account
+     *
+     * Remove `_value` tokens from the system irreversibly on behalf of `_from`.
+     *
+     * @param _from the address of the sender
+     * @param _value the amount of money to burn
+     */
+    function burnFrom(address _from, uint256 _value) public returns (bool success) {
+        allowance[_from][msg.sender] = allowance[_from][msg.sender].sub(_value); // Subtract from the sender's allowance
+        _burn(_from, _value);
+        return true;
+    }
+
+    function getBalance(address _to) view public returns(uint res) {
+        return balanceOf[_to];
+    }
+
+}
+
+contract CPROPToken is admined, TokenERC20  {
+    constructor(
+        uint256 initialSupply,
+        string tokenName,
+        uint256 decimalsToken,
+        string tokenSymbol
+    ) TokenERC20(initialSupply, tokenName, decimalsToken, tokenSymbol) public {
+    }
+}
 
 contract CPROPTokenPublicSale is admined {
     using SafeMath for uint256;
@@ -13,7 +302,6 @@ contract CPROPTokenPublicSale is admined {
     uint256 internal totalTokensSold;
     CPROPToken public cpropToken;
     AttoUSDperETH public AttoUSDperETHContract;
-    uint256 public attoUSDperETH;
     uint256 public attoUSDperTKN;
     uint256 public minEthAmount;
     uint256 public minGas;
@@ -43,20 +331,20 @@ contract CPROPTokenPublicSale is admined {
     event TokensSold(address indexed buyer, uint ethPaid, uint usdPaid, uint tokensReceived);
     event SoldOut(string _type, uint totalUsdRaised, uint totalTokensSold);
     
+    address internal ethWallet = 0x0; // wallet to gather Eth from sale
+    
     // This notifies admin about significant price change
     event priceChange(uint256 prevPrice, uint256 nextPrice, uint percentChange);
     
     /* Initializes contract with initial supply tokens to the creator of the contract */
     constructor(
         address _saleAdmin, 
-        address _token, 
-        address _usdpereth
+        address _token
     ) public {
         admin = _saleAdmin;
         CPROPTokenContractAddress = _token;
-        AttoUSDperETHContractAddress = _usdpereth;
+        //AttoUSDperETHContractAddress = _usdpereth;
         attoUSDperTKN = 1 * 10**(attoUsdDecimals-2);//$0.01 * 10**18 for 1 TKN
-        attoUSDperETH = 25600 * 10**(attoUsdDecimals-2);//512.00 * 10^18 for 1 ETH
         minEthAmount = 10 ** 17; // 0.1 Eth //_minEthAmount
         
         minGas = 21000; //_minGas;
@@ -65,7 +353,7 @@ contract CPROPTokenPublicSale is admined {
         maxGasPrice = 100 * 10**9; //100 GWEI _maxGasPrice;
 
         publicSaleStartTime = 1538265600; //1538265600 - Is equivalent to: 09/30/2018 @ 12:00am (UTC)
-        saleEndTime = 1542326399; //1542326399 - Is equivalent to: 11/15/2018 @ 11:59pm (UTC)
+        saleEndTime = 1541030399; //1541030399 - Is equivalent to: 10/31/2018 @ 11:59pm (UTC)
         hardCap = 20000000 * 10**attoUsdDecimals; // $20M * 10**18
         
         buyersCount = 0;
@@ -73,7 +361,16 @@ contract CPROPTokenPublicSale is admined {
         totalTokensSold = 0;
 
         cpropToken = CPROPToken(CPROPTokenContractAddress);
-        AttoUSDperETHContract = AttoUSDperETH(AttoUSDperETHContractAddress);
+        
+        /****/
+        //in case of external eth to usd contract
+        //AttoUSDperETHContract = AttoUSDperETH(AttoUSDperETHContractAddress);
+        
+        //in case of internal eth to usd contract
+        AttoUSDperETHContract = new AttoUSDperETH();
+        AttoUSDperETHContract.transferAdmin(admin);
+        AttoUSDperETHContractAddress = address(AttoUSDperETHContract);
+        /****/
        
         //owner = 0x0;
     }
@@ -136,7 +433,27 @@ contract CPROPTokenPublicSale is admined {
      * @return _attoUSDperTKN 1 eth price in atto usd 
      */
     function getAttoUSDperETH() public view returns (uint _attoUSDperTKN) {
-        return attoUSDperETH;
+        
+        return AttoUSDperETHContract.get();
+    }
+    
+    function getAttoUSDperETHPause() public view returns (bool _pause){
+        return AttoUSDperETHContract.getPause();
+    }
+    
+    function setAttoUSDperETHPause(bool _pause) onlyAdmin public {
+        AttoUSDperETHContract.setPause(_pause);
+    }
+
+    /**
+     * atto usd is usd * 10^18
+     * @param _attoUSDperETH set atto usd per 1 eth
+     */
+    function setAttoUSDperETH(uint _attoUSDperETH) onlyAdmin public {
+        //expecting in USD * 10^18;
+        if(_attoUSDperETH > 0) {
+            AttoUSDperETHContract.set(_attoUSDperETH);
+        }
     }
 
     /**
@@ -223,8 +540,9 @@ contract CPROPTokenPublicSale is admined {
     function buy() payable public {
         uint256 _tmpTknPrice = attoUSDperTKN;
         
-        
         require(msg.value >= minEthAmount);
+        
+        require(ethWallet != 0x0);
         
         //require(gasleft() >= minGas && gasleft() <= maxGas);//comment if truffle, uncomment on deploy
         require(tx.gasprice >= minGasPrice && tx.gasprice <= maxGasPrice);
@@ -237,9 +555,8 @@ contract CPROPTokenPublicSale is admined {
 
         //a single ETH-USD ExchangeRate smart contract 
         require(AttoUSDperETHContractAddress != 0x0);
-        attoUSDperETH = AttoUSDperETHContract.get();
-        require(AttoUSDperETHContract.getPause() == false);
-        
+        uint attoUSDperETH = this.getAttoUSDperETH();
+        require(AttoUSDperETHContract.getPause() == false);        
         uint _ethAmount = msg.value;
         uint _usdAmount = (_ethAmount.mul(attoUSDperETH)).div(10**18);//18 is const here, 1ether = 10^18wei
         
@@ -294,6 +611,8 @@ contract CPROPTokenPublicSale is admined {
 
         uint ethToReturn = msg.value.sub(_ethAmount); 
         if(ethToReturn > 0) msg.sender.transfer(ethToReturn);
+        
+        ethWallet.transfer(_ethAmount);
         
         // fire event for tokens sold
         emit TokensSold(msg.sender, _ethAmount, _usdAmount, amount);
