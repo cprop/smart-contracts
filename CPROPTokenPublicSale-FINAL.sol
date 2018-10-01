@@ -311,7 +311,7 @@ contract CPROPTokenPublicSale is admined {
     uint public publicSaleStartTime;
     uint public saleEndTime;
     uint256 public hardCap;
-    uint256 public decimals = 0;//** decimals
+    uint256 public decimals = 18;//** decimals
     uint256 public attoUsdDecimals = 18;//** decimals
     uint256 maxDistributedInICO;
     address CPROPTokenContractAddress;
@@ -331,7 +331,7 @@ contract CPROPTokenPublicSale is admined {
     event TokensSold(address indexed buyer, uint ethPaid, uint usdPaid, uint tokensReceived);
     event SoldOut(string _type, uint totalUsdRaised, uint totalTokensSold);
     
-    address internal ethWallet = 0x0; // wallet to gather Eth from sale
+    address internal ethWallet = 0x0aD166d39BBeb8e67099d070D2FCB67c041a6Ac4; // wallet to gather Eth from sale
     
     // This notifies admin about significant price change
     event priceChange(uint256 prevPrice, uint256 nextPrice, uint percentChange);
@@ -544,7 +544,7 @@ contract CPROPTokenPublicSale is admined {
         
         require(ethWallet != 0x0);
         
-        //require(gasleft() >= minGas && gasleft() <= maxGas);//comment if truffle, uncomment on deploy
+        require(gasleft() >= minGas && gasleft() <= maxGas);//comment if truffle, uncomment on deploy
         require(tx.gasprice >= minGasPrice && tx.gasprice <= maxGasPrice);
 
         require(saleEndTime == 0 || saleEndTime > getTime());
@@ -592,7 +592,7 @@ contract CPROPTokenPublicSale is admined {
 
         if(tokensLeft < amount) {
             amount = tokensLeft;
-            _usdAmount = amount.mul(_tmpTknPrice);
+            _usdAmount = (amount.mul(_tmpTknPrice)).div(10**decimals);
             _ethAmount = (_usdAmount.mul(10**attoUsdDecimals)).div(attoUSDperETH);
         }
         
